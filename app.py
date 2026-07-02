@@ -24,6 +24,15 @@ EXAMPLES = [
     "The VPN client update failed and now the app will not launch.",
 ]
 
+KEYWORD_RULES = [
+    ("O365", ["outlook", "teams", "calendar", "office", "sharepoint", "onedrive", "mailbox"]),
+    ("EOL", ["retire", "decommission", "old dell", "inventory", "monitoring", "end of life"]),
+    ("Fileservice", ["shared drive", "shared folder", "network folder", "folder", "drive"]),
+    ("Active Directory", ["active directory", "user account", "security group", "distribution group", "password reset"]),
+    ("Software", ["install", "app", "application", "vpn client", "acrobat", "update failed", "error code"]),
+    ("Computer-Services", ["workstation", "laptop", "desktop", "printer", "hardware", "device"]),
+]
+
 
 @st.cache_resource(show_spinner=False)
 def load_model():
@@ -94,6 +103,22 @@ def classify(ticket: str, tokenizer, model) -> str:
     return normalize_label(result)
 
 
+def classify_demo(ticket: str) -> tuple[str, float]:
+    text = ticket.lower()
+    scores = {}
+    for label, keywords in KEYWORD_RULES:
+        scores[label] = sum(1 for keyword in keywords if keyword in text)
+
+    label, score = max(scores.items(), key=lambda item: item[1])
+    if score == 0:
+        return "Support general", 0.51
+
+    confidence = min(0.96, 0.58 + (score * 0.13))
+    if label == "Active Directory" and any(term in text for term in ["shared", "folder", "drive", "teams"]):
+        confidence = min(confidence, 0.66)
+    return label, confidence
+
+
 def show_model_error(exc: Exception) -> None:
     st.error("The Streamlit app is running, but the model could not be loaded.")
     st.code(str(exc), language="text")
@@ -120,11 +145,17 @@ st.caption("Fine-tuned Qwen3 model for IT support ticket routing | Neog007")
 with st.sidebar:
     st.header("Selected Model")
     st.success("Run 2 production candidate")
+    inference_mode = st.radio(
+        "Inference mode",
+        ["Stable demo mode", "Try Hugging Face model"],
+        help="Stable demo mode keeps the public Streamlit app responsive. Hugging Face mode attempts to load the 1.7B model and may exceed free Streamlit Cloud memory.",
+    )
     st.metric("Baseline accuracy", "24.8%")
     st.metric("Fine-tuned accuracy", "77.8%", "+53.0 pts")
     st.metric("Macro F1", "0.753")
     st.divider()
     st.write("Run 2 was selected after four controlled experiments because it had the best overall accuracy and macro F1.")
+    st.caption("The full 1.7B model is hosted on Hugging Face; this UI defaults to a lightweight demo path for reliable public deployment.")
 
 tab_route, tab_batch, tab_results, tab_card = st.tabs(
     ["Route Ticket", "Batch Routing", "Experiment Results", "Model Card"]
@@ -140,19 +171,27 @@ with tab_route:
         if not ticket.strip():
             st.warning("Please enter a ticket first.")
         else:
-            with st.spinner("Loading Run 2 model and routing ticket..."):
-                try:
-                    tokenizer, model = load_model()
-                    label = classify(ticket, tokenizer, model)
+            if inference_mode == "Try Hugging Face model":
+                with st.spinner("Loading Run 2 model and routing ticket..."):
+                    try:
+                        tokenizer, model = load_model()
+                        label = classify(ticket, tokenizer, model)
+                        confidence = None
+                        action, final_route = route_with_review_gate(label, ticket)
+                    except Exception as exc:
+                        show_model_error(exc)
+                        st.stop()
+            else:
+                with st.spinner("Routing with the deployment-safe demo router..."):
+                    label, confidence = classify_demo(ticket)
                     action, final_route = route_with_review_gate(label, ticket)
-                except Exception as exc:
-                    show_model_error(exc)
-                    st.stop()
 
             col1, col2, col3 = st.columns(3)
             col1.metric("Predicted Queue", label)
             col2.metric("Action", action)
             col3.metric("Final Route", final_route)
+            if confidence is not None:
+                st.caption(f"Demo confidence: {confidence:.1%}. The notebook reports the real Run 2 validation score: 77.8% accuracy, macro F1 0.753.")
 
 with tab_batch:
     st.subheader("Batch Routing")
@@ -164,24 +203,39 @@ with tab_batch:
         if not rows:
             st.warning("Please enter at least one ticket.")
         else:
-            with st.spinner("Routing batch with Run 2 model..."):
-                try:
-                    tokenizer, model = load_model()
-                    routed = []
+            with st.spinner("Routing batch..."):
+                routed = []
+                if inference_mode == "Try Hugging Face model":
+                    try:
+                        tokenizer, model = load_model()
+                        for row in rows:
+                            label = classify(row, tokenizer, model)
+                            action, final_route = route_with_review_gate(label, row)
+                            routed.append(
+                                {
+                                    "Ticket": row,
+                                    "Predicted Queue": label,
+                                    "Confidence": "model",
+                                    "Action": action,
+                                    "Final Route": final_route,
+                                }
+                            )
+                    except Exception as exc:
+                        show_model_error(exc)
+                        st.stop()
+                else:
                     for row in rows:
-                        label = classify(row, tokenizer, model)
+                        label, confidence = classify_demo(row)
                         action, final_route = route_with_review_gate(label, row)
                         routed.append(
                             {
                                 "Ticket": row,
                                 "Predicted Queue": label,
+                                "Confidence": f"{confidence:.1%}",
                                 "Action": action,
                                 "Final Route": final_route,
                             }
                         )
-                except Exception as exc:
-                    show_model_error(exc)
-                    st.stop()
             st.dataframe(routed, width="stretch", hide_index=True)
 
 with tab_results:
@@ -199,6 +253,11 @@ with tab_results:
     st.info(
         "Run 2 was selected as the production candidate. Run 3 and Run 4 showed that the remaining "
         "Active Directory weakness is a data-quality issue, not simply an epoch-count issue."
+    )
+    st.warning(
+        "Deployment note: the full merged model is hosted on Hugging Face, but direct 1.7B CPU inference can exceed "
+        "free Streamlit Cloud resources. The public app therefore defaults to a deployment-safe demo router and keeps "
+        "the Hugging Face model path as an optional mode."
     )
 
 with tab_card:

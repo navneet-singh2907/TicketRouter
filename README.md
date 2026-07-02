@@ -15,7 +15,7 @@ The project includes a small Streamlit product demo that presents the model as a
 - Failure analysis
 - Model card
 
-The UI intentionally uses a lightweight routing simulator so it can run locally without a GPU. The real model evidence comes from the notebook experiments.
+The deployed UI defaults to a lightweight routing simulator so it can run reliably on Streamlit Cloud without a GPU. The real model evidence comes from the notebook experiments and the merged Hugging Face model artifact.
 
 ## Experiment Summary
 
@@ -35,13 +35,26 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Deployment Note
+
+The merged Run 2 model is hosted on Hugging Face as `Neog007/TicketRouter-1.7B`. The repository contains a valid Qwen3 config and merged `model.safetensors` artifact.
+
+Directly loading a 1.7B parameter model inside free Streamlit Cloud is resource intensive and may exceed the available memory/CPU budget. For a reliable public demo, `app.py` defaults to **Stable demo mode**, which mirrors the product workflow:
+
+- single-ticket routing
+- batch routing
+- confidence-style human review gate
+- model card and experiment evidence
+
+The sidebar also includes **Try Hugging Face model** for environments that can load the full model.
+
 ## Project Files
 
 - `TicketRouter_Builder_Edition.ipynb` - main builder notebook
 - `TicketRouter_Run2_Targeted_Accuracy.ipynb` - selected production candidate
 - `TicketRouter_Run3_Failure_Driven.ipynb` - boundary-data experiment
 - `TicketRouter_Run4_Failure_Driven_4Epochs.ipynb` - controlled epoch-count experiment
-- `app.py` - Streamlit Cloud deployment app using `Neog007/TicketRouter-1.7B`
+- `app.py` - Streamlit Cloud deployment app with stable demo mode and optional Hugging Face model loading
 - `streamlit_app.py` - lightweight local ops-console demo
 
 ## Final Decision
