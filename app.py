@@ -139,7 +139,7 @@ with tab_batch:
                             "Final Route": final_route,
                         }
                     )
-            st.dataframe(routed, use_container_width=True, hide_index=True)
+            st.dataframe(routed, width="stretch", hide_index=True)
 
 with tab_results:
     st.subheader("Controlled Experiment Results")

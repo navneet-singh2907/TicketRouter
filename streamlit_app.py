@@ -230,7 +230,7 @@ with st.sidebar:
         RUN_RESULTS.set_index("Run").style.format(
             {"Accuracy": "{:.1%}", "Macro F1": "{:.3f}", "Active Directory F1": "{:.3f}", "Software F1": "{:.3f}"}
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
 overview, single, batch, analysis, model_card = st.tabs(
@@ -252,7 +252,7 @@ with overview:
     st.markdown("#### Run 2 Per-Class Evaluation")
     st.dataframe(
         RUN2_CLASS_RESULTS.style.format({"Precision": "{:.3f}", "Recall": "{:.3f}", "F1": "{:.3f}"}),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -262,7 +262,7 @@ with single:
     default_ticket = "" if example == "Custom" else example
     ticket_text = st.text_area("Support ticket", value=default_ticket, height=150)
 
-    if st.button("Route ticket", type="primary", use_container_width=False):
+    if st.button("Route ticket", type="primary", width="content"):
         if not ticket_text.strip():
             st.warning("Enter a ticket before routing.")
         else:
@@ -285,7 +285,7 @@ with batch:
         if routed.empty:
             st.warning("Paste at least one ticket.")
         else:
-            st.dataframe(routed, use_container_width=True, hide_index=True)
+            st.dataframe(routed, width="stretch", hide_index=True)
             action_counts = routed["Action"].value_counts().rename_axis("Action").reset_index(name="Count")
             st.bar_chart(action_counts.set_index("Action"))
 
@@ -309,7 +309,7 @@ with analysis:
             {"Experiment": "Run 4", "Change": "Same as Run 3, 4 epochs", "Outcome": "No recovery; AD worsened"},
         ]
     )
-    st.dataframe(comparison, use_container_width=True, hide_index=True)
+    st.dataframe(comparison, width="stretch", hide_index=True)
 
 with model_card:
     st.subheader("Model Card")
@@ -327,6 +327,6 @@ with model_card:
             {"Field": "Privacy note", "Value": "IT tickets may contain account names, access requests, device IDs, and internal system names"},
         ]
     )
-    st.dataframe(card, use_container_width=True, hide_index=True)
+    st.dataframe(card, width="stretch", hide_index=True)
 
 st.caption("Demo note: the UI uses a lightweight routing simulator for presentation. The model-selection evidence comes from the fine-tuned notebook experiments.")
