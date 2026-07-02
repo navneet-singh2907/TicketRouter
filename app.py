@@ -1,11 +1,14 @@
+import os
 import re
 
 import streamlit as st
 import torch
+from peft import PeftConfig, PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 MODEL_ID = "Neog007/TicketRouter-1.7B"
+BASE_MODEL_ID = "Qwen/Qwen3-1.7B-Base"
 LABELS = [
     "Active Directory",
     "Computer-Services",
@@ -27,13 +30,31 @@ EXAMPLES = [
 
 @st.cache_resource(show_spinner=False)
 def load_model():
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
-        torch_dtype=torch.float32,
-        trust_remote_code=True,
-        low_cpu_mem_usage=True,
-    )
+    token = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN")) if hasattr(st, "secrets") else os.getenv("HF_TOKEN")
+    auth_kwargs = {"token": token} if token else {}
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, **auth_kwargs)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_ID,
+            torch_dtype=torch.float32,
+            trust_remote_code=True,
+            low_cpu_mem_usage=True,
+            **auth_kwargs,
+        )
+    except ValueError as exc:
+        if "model_type" not in str(exc):
+            raise
+
+        adapter_config = PeftConfig.from_pretrained(MODEL_ID, **auth_kwargs)
+        base_model_id = adapter_config.base_model_name_or_path or BASE_MODEL_ID
+        base_model = AutoModelForCausalLM.from_pretrained(
+            base_model_id,
+            torch_dtype=torch.float32,
+            trust_remote_code=True,
+            low_cpu_mem_usage=True,
+            **auth_kwargs,
+        )
+        model = PeftModel.from_pretrained(base_model, MODEL_ID, **auth_kwargs)
     model.eval()
     return tokenizer, model
 
