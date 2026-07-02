@@ -3,7 +3,6 @@ import re
 
 import streamlit as st
 import torch
-from peft import PeftConfig, PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -44,6 +43,8 @@ def load_model():
     except ValueError as exc:
         if "model_type" not in str(exc):
             raise
+
+        from peft import PeftConfig, PeftModel
 
         adapter_config = PeftConfig.from_pretrained(MODEL_ID, **auth_kwargs)
         base_model_id = adapter_config.base_model_name_or_path or BASE_MODEL_ID
