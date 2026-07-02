@@ -2,8 +2,6 @@ import os
 import re
 
 import streamlit as st
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 MODEL_ID = "Neog007/TicketRouter-1.7B"
@@ -29,6 +27,9 @@ EXAMPLES = [
 
 @st.cache_resource(show_spinner=False)
 def load_model():
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
     token = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN")) if hasattr(st, "secrets") else os.getenv("HF_TOKEN")
     auth_kwargs = {"token": token} if token else {}
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True, **auth_kwargs)
@@ -70,6 +71,8 @@ def normalize_label(text: str) -> str:
 
 
 def classify(ticket: str, tokenizer, model) -> str:
+    import torch
+
     prompt = (
         "<|im_start|>system\n"
         "Route this IT support ticket to exactly one queue. "
@@ -89,6 +92,16 @@ def classify(ticket: str, tokenizer, model) -> str:
         )
     result = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
     return normalize_label(result)
+
+
+def show_model_error(exc: Exception) -> None:
+    st.error("The Streamlit app is running, but the model could not be loaded.")
+    st.code(str(exc), language="text")
+    st.info(
+        "For the live demo, the most reliable fix is to upload the fully merged model folder "
+        "from Colab, not just the LoRA adapter folder. The merged folder should contain a "
+        "valid config.json with a model_type field."
+    )
 
 
 def route_with_review_gate(label: str, ticket: str) -> tuple[str, str]:
@@ -128,9 +141,13 @@ with tab_route:
             st.warning("Please enter a ticket first.")
         else:
             with st.spinner("Loading Run 2 model and routing ticket..."):
-                tokenizer, model = load_model()
-                label = classify(ticket, tokenizer, model)
-                action, final_route = route_with_review_gate(label, ticket)
+                try:
+                    tokenizer, model = load_model()
+                    label = classify(ticket, tokenizer, model)
+                    action, final_route = route_with_review_gate(label, ticket)
+                except Exception as exc:
+                    show_model_error(exc)
+                    st.stop()
 
             col1, col2, col3 = st.columns(3)
             col1.metric("Predicted Queue", label)
@@ -148,19 +165,23 @@ with tab_batch:
             st.warning("Please enter at least one ticket.")
         else:
             with st.spinner("Routing batch with Run 2 model..."):
-                tokenizer, model = load_model()
-                routed = []
-                for row in rows:
-                    label = classify(row, tokenizer, model)
-                    action, final_route = route_with_review_gate(label, row)
-                    routed.append(
-                        {
-                            "Ticket": row,
-                            "Predicted Queue": label,
-                            "Action": action,
-                            "Final Route": final_route,
-                        }
-                    )
+                try:
+                    tokenizer, model = load_model()
+                    routed = []
+                    for row in rows:
+                        label = classify(row, tokenizer, model)
+                        action, final_route = route_with_review_gate(label, row)
+                        routed.append(
+                            {
+                                "Ticket": row,
+                                "Predicted Queue": label,
+                                "Action": action,
+                                "Final Route": final_route,
+                            }
+                        )
+                except Exception as exc:
+                    show_model_error(exc)
+                    st.stop()
             st.dataframe(routed, width="stretch", hide_index=True)
 
 with tab_results:
