@@ -6,6 +6,7 @@ import streamlit as st
 
 MODEL_ID = "Neog007/TicketRouter-1.7B"
 BASE_MODEL_ID = "Qwen/Qwen3-1.7B-Base"
+DEFAULT_REVIEW_THRESHOLD = 0.70
 LABELS = [
     "Active Directory",
     "Computer-Services",
@@ -32,6 +33,19 @@ KEYWORD_RULES = [
     ("Software", ["install", "app", "application", "vpn client", "acrobat", "update failed", "error code"]),
     ("Computer-Services", ["workstation", "laptop", "desktop", "printer", "hardware", "device"]),
 ]
+
+
+def get_config_value(name: str, default: str = "") -> str:
+    value = os.getenv(name)
+    if value:
+        return value
+
+    try:
+        value = st.secrets.get(name, default)
+    except Exception:
+        value = default
+
+    return value or default
 
 
 @st.cache_resource(show_spinner=False)
@@ -119,6 +133,22 @@ def classify_demo(ticket: str) -> tuple[str, float]:
     return label, confidence
 
 
+def route_via_cloud_run(ticket: str, review_threshold: float) -> dict:
+    import requests
+
+    api_url = get_config_value("TICKETROUTER_API_URL").rstrip("/")
+    if not api_url:
+        raise RuntimeError("TICKETROUTER_API_URL is not configured.")
+
+    response = requests.post(
+        f"{api_url}/route",
+        json={"ticket": ticket, "review_threshold": review_threshold},
+        timeout=180,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def show_model_error(exc: Exception) -> None:
     st.error("The Streamlit app is running, but the model could not be loaded.")
     st.code(str(exc), language="text")
@@ -142,14 +172,27 @@ st.set_page_config(page_title="TicketRouter-1.7B", layout="wide")
 st.title("TicketRouter-1.7B")
 st.caption("Fine-tuned Qwen3 model for IT support ticket routing | Neog007")
 
+cloud_run_url = get_config_value("TICKETROUTER_API_URL")
+
 with st.sidebar:
     st.header("Selected Model")
     st.success("Run 2 production candidate")
     inference_mode = st.radio(
         "Inference mode",
-        ["Stable demo mode", "Try Hugging Face model"],
-        help="Stable demo mode keeps the public Streamlit app responsive. Hugging Face mode attempts to load the 1.7B model and may exceed free Streamlit Cloud memory.",
+        ["Stable demo mode", "Cloud Run API", "Try Hugging Face model"],
+        help="Cloud Run API uses the production-style backend when TICKETROUTER_API_URL is configured. Stable demo mode keeps the public Streamlit app responsive.",
     )
+    review_threshold = st.slider(
+        "Human review threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=DEFAULT_REVIEW_THRESHOLD,
+        step=0.05,
+    )
+    if cloud_run_url:
+        st.caption("Cloud Run API configured.")
+    else:
+        st.caption("Cloud Run API not configured yet.")
     st.metric("Baseline accuracy", "24.8%")
     st.metric("Fine-tuned accuracy", "77.8%", "+53.0 pts")
     st.metric("Macro F1", "0.753")
@@ -171,7 +214,18 @@ with tab_route:
         if not ticket.strip():
             st.warning("Please enter a ticket first.")
         else:
-            if inference_mode == "Try Hugging Face model":
+            if inference_mode == "Cloud Run API":
+                with st.spinner("Routing through the Cloud Run model API..."):
+                    try:
+                        result = route_via_cloud_run(ticket, review_threshold)
+                        label = result["predicted_label"]
+                        confidence = result.get("confidence")
+                        action = result["action"]
+                        final_route = result["final_route"]
+                    except Exception as exc:
+                        show_model_error(exc)
+                        st.stop()
+            elif inference_mode == "Try Hugging Face model":
                 with st.spinner("Loading Run 2 model and routing ticket..."):
                     try:
                         tokenizer, model = load_model()
@@ -191,7 +245,8 @@ with tab_route:
             col2.metric("Action", action)
             col3.metric("Final Route", final_route)
             if confidence is not None:
-                st.caption(f"Demo confidence: {confidence:.1%}. The notebook reports the real Run 2 validation score: 77.8% accuracy, macro F1 0.753.")
+                source = "Cloud Run confidence" if inference_mode == "Cloud Run API" else "Demo confidence"
+                st.caption(f"{source}: {confidence:.1%}. The notebook reports the real Run 2 validation score: 77.8% accuracy, macro F1 0.753.")
 
 with tab_batch:
     st.subheader("Batch Routing")
@@ -205,7 +260,23 @@ with tab_batch:
         else:
             with st.spinner("Routing batch..."):
                 routed = []
-                if inference_mode == "Try Hugging Face model":
+                if inference_mode == "Cloud Run API":
+                    try:
+                        for row in rows:
+                            result = route_via_cloud_run(row, review_threshold)
+                            routed.append(
+                                {
+                                    "Ticket": row,
+                                    "Predicted Queue": result["predicted_label"],
+                                    "Confidence": f"{result.get('confidence', 0.0):.1%}",
+                                    "Action": result["action"],
+                                    "Final Route": result["final_route"],
+                                }
+                            )
+                    except Exception as exc:
+                        show_model_error(exc)
+                        st.stop()
+                elif inference_mode == "Try Hugging Face model":
                     try:
                         tokenizer, model = load_model()
                         for row in rows:

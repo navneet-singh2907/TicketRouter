@@ -17,6 +17,52 @@ The project includes a small Streamlit product demo that presents the model as a
 
 The deployed UI defaults to a lightweight routing simulator so it can run reliably on Streamlit Cloud without a GPU. The real model evidence comes from the notebook experiments and the merged Hugging Face model artifact.
 
+## Production-Style Cloud Run Deployment
+
+The repo also includes a deployable inference API in `cloudrun/`. This separates the public Streamlit ops console from the heavier model-serving layer:
+
+```text
+Streamlit UI -> Cloud Run FastAPI endpoint -> TicketRouter-1.7B model on Hugging Face
+```
+
+The Cloud Run service exposes:
+
+- `GET /health` for service status and GPU availability
+- `POST /route` for model-backed ticket routing
+- confidence-gated human review behavior for ambiguous tickets
+
+Deploy the API only when you are ready to test or record a demo, then delete it to control cost:
+
+```bash
+gcloud run deploy ticketrouter-api \
+  --source cloudrun \
+  --region us-central1 \
+  --gpu 1 \
+  --gpu-type nvidia-l4 \
+  --cpu 4 \
+  --memory 16Gi \
+  --min-instances 0 \
+  --max-instances 1 \
+  --allow-unauthenticated \
+  --set-env-vars MODEL_ID=Neog007/TicketRouter-1.7B,REVIEW_THRESHOLD=0.70
+```
+
+After deployment, set `TICKETROUTER_API_URL` in Streamlit Cloud secrets to the Cloud Run URL and select **Cloud Run API** in the app sidebar.
+
+Capture for resume/demo proof:
+
+- Cloud Run service page
+- `/health` response
+- one `/route` response
+- Streamlit UI using Cloud Run API mode
+- Cloud Run request logs
+
+Shutdown command:
+
+```bash
+gcloud run services delete ticketrouter-api --region us-central1
+```
+
 ## Experiment Summary
 
 | Metric | Run 1 | Run 2 | Run 3 | Run 4 |
@@ -56,6 +102,7 @@ The sidebar also includes **Try Hugging Face model** for environments that can l
 - `TicketRouter_Run4_Failure_Driven_4Epochs.ipynb` - controlled epoch-count experiment
 - `app.py` - Streamlit Cloud deployment app with stable demo mode and optional Hugging Face model loading
 - `streamlit_app.py` - lightweight local ops-console demo
+- `cloudrun/` - FastAPI model-serving backend for Cloud Run GPU deployment
 
 ## Final Decision
 

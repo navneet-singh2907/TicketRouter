@@ -1,0 +1,27 @@
+I built TicketRouter, an IT support ticket routing system fine-tuned on Qwen3-1.7B with LoRA.
+
+The goal was simple: take messy internal IT tickets and route them to the right resolver queue.
+
+But the real learning was not just "train a model." It was turning a notebook into an engineering decision: baseline, fine-tune, failure analysis, controlled experiments, production candidate, and deployment constraints.
+
+The baseline model reached 24.8% accuracy.
+
+The best fine-tuned run reached 77.8% accuracy, a +53 point improvement, with a macro F1 of 0.753.
+
+I also tested additional runs to improve weak classes like Active Directory.
+
+One concrete failure case: a contractor request for access to a finance distribution group was predicted as O365 instead of Active Directory. That kind of ambiguous access language is exactly where the model struggled.
+
+The useful result: more epochs did not solve it. The bottleneck was data quality and label ambiguity, not training time.
+
+That became the strongest part of the project.
+
+I did not just submit a working notebook. I submitted a model decision story.
+
+Stack: Qwen3-1.7B + LoRA via LLaMA Factory, trained in Colab, shipped with a Hugging Face model artifact, Streamlit ops-console demo, model card, and failure analysis.
+
+Biggest takeaway: a good AI project is not just the model score. It is knowing why the model behaves the way it does, when to trust it, and when to route to human review.
+
+Curious how others are handling ambiguous-label classes in production fine-tuning workflows.
+
+#MachineLearning #FineTuning #LLM #AIEngineering #Streamlit #HuggingFace #MLOps #GenerativeAI
