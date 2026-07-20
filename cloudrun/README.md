@@ -31,9 +31,72 @@ Example response:
 
 Use GPU only when you are ready to capture a demo or run real tests. Keep the service cost-limited with `min-instances=0` and `max-instances=1`.
 
+## Build Locally First
+
+Build the container from the repo root:
+
+```bash
+docker build -t ticketrouter-api:local ./cloudrun
+```
+
+Run the API locally:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e MODEL_ID=Neog007/TicketRouter-1.7B \
+  -e REVIEW_THRESHOLD=0.70 \
+  ticketrouter-api:local
+```
+
+In another terminal:
+
+```bash
+curl http://localhost:8080/health
+```
+
+The first `/route` request will download and load the model, so it can take a while:
+
+```bash
+curl -X POST http://localhost:8080/route \
+  -H "Content-Type: application/json" \
+  -d "{\"ticket\":\"My Outlook calendar is not syncing with Teams.\"}"
+```
+
+On a normal laptop, local CPU inference may be very slow or fail due memory. The local Docker test is mainly to prove the container starts; Cloud Run GPU is the real serving target.
+
+## Deploy With Source Build
+
 ```bash
 gcloud run deploy ticketrouter-api \
   --source cloudrun \
+  --region us-central1 \
+  --gpu 1 \
+  --gpu-type nvidia-l4 \
+  --cpu 4 \
+  --memory 16Gi \
+  --min-instances 0 \
+  --max-instances 1 \
+  --allow-unauthenticated \
+  --set-env-vars MODEL_ID=Neog007/TicketRouter-1.7B,REVIEW_THRESHOLD=0.70
+```
+
+## Deploy A Prebuilt Image
+
+If you want the fully old-fashioned path, build and push the image yourself, then deploy the image:
+
+```bash
+gcloud artifacts repositories create ticketrouter \
+  --repository-format=docker \
+  --location=us-central1
+
+gcloud auth configure-docker us-central1-docker.pkg.dev
+
+docker build -t us-central1-docker.pkg.dev/YOUR_PROJECT_ID/ticketrouter/ticketrouter-api:run2 ./cloudrun
+
+docker push us-central1-docker.pkg.dev/YOUR_PROJECT_ID/ticketrouter/ticketrouter-api:run2
+
+gcloud run deploy ticketrouter-api \
+  --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/ticketrouter/ticketrouter-api:run2 \
   --region us-central1 \
   --gpu 1 \
   --gpu-type nvidia-l4 \

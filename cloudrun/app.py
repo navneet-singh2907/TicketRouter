@@ -14,14 +14,20 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 REVIEW_THRESHOLD = float(os.getenv("REVIEW_THRESHOLD", "0.70"))
 
 LABELS = [
-    "Active Directory",
-    "Computer-Services",
-    "EOL",
+    "Support general",
     "Fileservice",
     "O365",
+    "EOL",
     "Software",
-    "Support general",
+    "Active Directory",
+    "Computer-Services",
 ]
+
+SYSTEM_PROMPT = (
+    "You are an IT helpdesk ticket routing assistant. "
+    "Given a support ticket, respond with exactly one of the following categories: "
+    "Support general, Fileservice, O365, EOL, Software, Active Directory, Computer-Services."
+)
 
 RISKY_ACCESS_TERMS = [
     "access",
@@ -57,38 +63,32 @@ app = FastAPI(
 def normalize_label(text: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9\-\s]", "", text).strip()
     for label in LABELS:
-        if label.lower() in cleaned.lower():
+        if cleaned.lower().startswith(label.lower()):
             return label
 
     first_line = cleaned.splitlines()[0].strip() if cleaned else ""
     return first_line if first_line in LABELS else "Support general"
 
 
-def build_prompt(ticket: str) -> str:
-    return (
-        "<|im_start|>system\n"
-        "Route this IT support ticket to exactly one queue. "
-        f"Allowed queues: {', '.join(LABELS)}. "
-        "Return only the queue name."
-        "<|im_end|>\n"
-        f"<|im_start|>user\n{ticket}<|im_end|>\n"
-        "<|im_start|>assistant\n"
-    )
+def build_prompt(ticket: str, tokenizer: AutoTokenizer) -> str:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Support Ticket: {ticket}"},
+    ]
+    return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
 
-def confidence_from_scores(outputs) -> float:
+def confidence_from_scores(outputs, tokenizer: AutoTokenizer, label: str) -> float:
     if not outputs.scores:
         return 0.0
 
-    token_confidences = []
-    for score_tensor in outputs.scores:
-        probs = torch.softmax(score_tensor[0].float(), dim=-1)
-        token_confidences.append(float(torch.max(probs).item()))
-
-    if not token_confidences:
+    if label not in LABELS:
         return 0.0
 
-    return sum(token_confidences) / len(token_confidences)
+    first_scores = outputs.scores[0][0].float()
+    label_first_ids = [tokenizer.encode(label_text, add_special_tokens=False)[0] for label_text in LABELS]
+    label_probs = torch.softmax(first_scores[label_first_ids], dim=-1).cpu().tolist()
+    return float(label_probs[LABELS.index(label)])
 
 
 def apply_review_gate(label: str, confidence: float, ticket: str, threshold: float) -> tuple[str, str]:
@@ -148,15 +148,15 @@ def route_ticket(request: RouteRequest):
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"model load failed: {exc}") from exc
 
-    prompt = build_prompt(ticket)
+    prompt = build_prompt(ticket, tokenizer)
     inputs = tokenizer(prompt, return_tensors="pt")
-    if torch.cuda.is_available():
-        inputs = {key: value.to(model.device) for key, value in inputs.items()}
+    device = next(model.parameters()).device
+    inputs = {key: value.to(device) for key, value in inputs.items()}
 
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=12,
+            max_new_tokens=10,
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
             return_dict_in_generate=True,
@@ -164,9 +164,9 @@ def route_ticket(request: RouteRequest):
         )
 
     generated = outputs.sequences[0][inputs["input_ids"].shape[1] :]
-    decoded = tokenizer.decode(generated, skip_special_tokens=True)
+    decoded = tokenizer.decode(generated, skip_special_tokens=True).strip()
     label = normalize_label(decoded)
-    confidence = confidence_from_scores(outputs)
+    confidence = confidence_from_scores(outputs, tokenizer, label)
     threshold = request.review_threshold if request.review_threshold is not None else REVIEW_THRESHOLD
     action, final_route = apply_review_gate(label, confidence, ticket, threshold)
 
