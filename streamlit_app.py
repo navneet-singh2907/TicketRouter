@@ -180,7 +180,6 @@ def predict_ticket(ticket: str, threshold: float) -> RouteDecision:
         evidence=evidence,
     )
 
-
 def route_many(raw_text: str, threshold: float) -> pd.DataFrame:
     tickets = [line.strip() for line in raw_text.splitlines() if line.strip()]
     rows = []
