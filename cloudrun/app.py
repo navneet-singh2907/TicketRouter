@@ -60,6 +60,28 @@ app = FastAPI(
 )
 
 
+@app.get("/")
+def root():
+    return {
+        "service": "TicketRouter API",
+        "status": "ok",
+        "model_id": MODEL_ID,
+        "model_loaded": load_model.cache_info().currsize > 0,
+        "cuda_available": torch.cuda.is_available(),
+        "endpoints": {
+            "health": "/health",
+            "route": "/route",
+        },
+        "example": {
+            "method": "POST",
+            "path": "/route",
+            "body": {
+                "ticket": "My Outlook calendar invites are not showing up in Teams meetings."
+            },
+        },
+    }
+
+
 def normalize_label(text: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9\-\s]", "", text).strip()
     for label in LABELS:
@@ -136,7 +158,7 @@ def health():
         "cuda_available": torch.cuda.is_available(),
     }
 
-
+#Tools
 @app.post("/route", response_model=RouteResponse)
 def route_ticket(request: RouteRequest):
     ticket = request.ticket.strip()
