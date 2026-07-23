@@ -8,10 +8,11 @@ The selected model is **Run 2**, which improved validation accuracy from **24.8%
 
 **Live API:** `https://ticketrouter-cpu-api-281584520321.us-east4.run.app`
 
-**Demo video:** add the 30-second recording here:
+
 
 ```text
-docs/demo/ticketrouter-cloudrun-demo.mp4
+Video -
+(https://drive.google.com/file/d/1wqx1sejQiI2abX4ezylm68kC9ullkTMY/view?usp=sharing)
 ```
 
 Suggested recording flow: open `/`, open `/health`, run a `POST /route` request, then show the Run 2 result summary.
