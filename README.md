@@ -1,69 +1,70 @@
-# TicketRouter Ops Console
+# TicketRouter
 
-TicketRouter is a confidence-gated IT support ticket routing project built around a fine-tuned Qwen3-1.7B model with a LoRA adapter.
+TicketRouter is an IT support ticket routing system built from a fine-tuned **Qwen3-1.7B + LoRA** model and deployed as a containerized **FastAPI service on Google Cloud Run**.
 
-The selected model is **Run 2**, which reached **77.8% validation accuracy**, improving over the 24.8% baseline by **+53.0 percentage points**.
+The selected model is **Run 2**, which improved validation accuracy from **24.8% baseline** to **77.8% fine-tuned accuracy** with a **0.753 macro F1**.
 
-## Why This Is More Than A Notebook
+## Demo
 
-The project includes a small Streamlit product demo that presents the model as an internal helpdesk routing console:
+**Live API:** `https://ticketrouter-cpu-api-281584520321.us-east4.run.app`
 
-- Single-ticket routing
-- Batch ticket routing
-- Confidence-based human review gate
-- Run comparison dashboard
-- Failure analysis
-- Model card
-
-The deployed UI defaults to a lightweight routing simulator so it can run reliably on Streamlit Cloud without a GPU. The real model evidence comes from the notebook experiments and the merged Hugging Face model artifact.
-
-## Production-Style Cloud Run Deployment
-
-The repo also includes a deployable inference API in `cloudrun/`. This separates the public Streamlit ops console from the heavier model-serving layer:
+**Demo video:** add the 30-second recording here:
 
 ```text
-Streamlit UI -> Cloud Run FastAPI endpoint -> TicketRouter-1.7B model on Hugging Face
+docs/demo/ticketrouter-cloudrun-demo.mp4
 ```
 
-The Cloud Run service exposes:
+Suggested recording flow: open `/`, open `/health`, run a `POST /route` request, then show the Run 2 result summary.
 
-- `GET /health` for service status and GPU availability
-- `POST /route` for model-backed ticket routing
-- confidence-gated human review behavior for ambiguous tickets
+## Deployed API Proof
 
-Deploy the API only when you are ready to test or record a demo, then delete it to control cost:
+The Cloud Run service exposes a small production-style API:
+
+- `GET /` - service information and endpoint guide
+- `GET /health` - model/service health check
+- `POST /route` - model-backed ticket routing
+
+### Service Landing Endpoint
+
+![Cloud Run root endpoint](docs/assets/cloudrun-root.png)
+
+### Health Endpoint
+
+![Cloud Run health endpoint](docs/assets/cloudrun-health.png)
+
+### Route Prediction
+
+![Cloud Run route prediction](docs/assets/cloudrun-route.png)
+
+Example request:
 
 ```bash
-gcloud run deploy ticketrouter-api \
-  --source cloudrun \
-  --region us-central1 \
-  --gpu 1 \
-  --gpu-type nvidia-l4 \
-  --cpu 4 \
-  --memory 16Gi \
-  --min-instances 0 \
-  --max-instances 1 \
-  --allow-unauthenticated \
-  --set-env-vars MODEL_ID=Neog007/TicketRouter-1.7B,REVIEW_THRESHOLD=0.70
+SERVICE_URL="https://ticketrouter-cpu-api-281584520321.us-east4.run.app"
+
+curl -X POST "$SERVICE_URL/route" \
+  -H "Content-Type: application/json" \
+  -d '{"ticket":"My Outlook calendar invites are not showing up in Teams meetings."}'
 ```
 
-After deployment, set `TICKETROUTER_API_URL` in Streamlit Cloud secrets to the Cloud Run URL and select **Cloud Run API** in the app sidebar.
+Example response:
 
-Capture for resume/demo proof:
-
-- Cloud Run service page
-- `/health` response
-- one `/route` response
-- Streamlit UI using Cloud Run API mode
-- Cloud Run request logs
-
-Shutdown command:
-
-```bash
-gcloud run services delete ticketrouter-api --region us-central1
+```json
+{
+  "predicted_label": "O365",
+  "final_route": "O365",
+  "confidence": 0.9964,
+  "action": "Auto-route",
+  "model_id": "Neog007/TicketRouter-1.7B"
+}
 ```
 
-## Experiment Summary
+## Ops Console
+
+I also built a Streamlit ops console to present the model like an internal helpdesk routing tool. It includes single-ticket routing, batch routing, confidence gating, failure analysis, and a model card.
+
+![TicketRouter Ops Console](docs/assets/ops-console-run2.png)
+
+## Experiment Results
 
 | Metric | Run 1 | Run 2 | Run 3 | Run 4 |
 |---|---:|---:|---:|---:|
@@ -72,40 +73,137 @@ gcloud run services delete ticketrouter-api --region us-central1
 | Software F1 | 0.600 | 0.522 | **0.609** | 0.583 |
 | Macro F1 | 0.699 | **0.753** | 0.717 | 0.718 |
 
-Run 2 was selected because it produced the best overall accuracy, best macro F1, and best Active Directory F1. Run 3 and Run 4 showed that the remaining Active Directory weakness is a data-quality problem, not simply an epoch-count problem.
+**Final decision:** Run 2 is the production candidate because it had the best accuracy, best macro F1, and best Active Directory F1 across four controlled experiments.
 
-## Run The Streamlit Demo
+Run 3 added targeted boundary examples. Run 4 kept those examples and increased epochs to 4. Both stayed at 74.4% accuracy, which showed that the regression was caused by data quality and label ambiguity, not simply under-training.
+
+## Failure Analysis
+
+The confusion matrix shows strong routing for O365, EOL, Fileservice, and Computer-Services. The weakest class is **Active Directory**, mostly because ambiguous access tickets can look similar to Fileservice or O365 requests.
+
+![Run 2 confusion matrix](docs/assets/confusion-matrix-run2.png)
+
+Key observations:
+
+- **EOL** was the strongest class, with 100% recall in Run 2.
+- **O365** performed well because tickets often contain clear Outlook, Teams, mailbox, or Office signals.
+- **Active Directory** remained the riskiest class because account, group, folder, and access-language overlap across multiple queues.
+- The production mitigation is a **confidence-based human review gate** for ambiguous tickets.
+
+## Architecture
+
+```text
+Notebook experiments
+        |
+        v
+Qwen3-1.7B + LoRA adapter
+        |
+        v
+Merged Hugging Face model artifact
+        |
+        v
+FastAPI inference service
+        |
+        v
+Docker image in Artifact Registry
+        |
+        v
+Google Cloud Run endpoint
+```
+
+## Production Decisions
+
+| Decision | Choice |
+|---|---|
+| Base model | `Qwen/Qwen3-1.7B-Base` |
+| Fine-tuning | LoRA via LLaMA Factory |
+| Selected run | Run 2 |
+| Model host | Hugging Face: `Neog007/TicketRouter-1.7B` |
+| Serving layer | FastAPI |
+| Deployment | Docker + Google Cloud Run |
+| Safety layer | Low-confidence predictions route to human review |
+| Current public demo | CPU-only Cloud Run service |
+
+GPU deployment was prepared for NVIDIA L4 on Cloud Run, but the available GCP project quota limited GPU execution. The public demo runs CPU-only, which is slower on first request but still proves the deployment path end to end.
+
+## Run Locally
+
+### Streamlit Ops Console
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Deployment Note
+### Cloud Run API Locally
 
-The merged Run 2 model is hosted on Hugging Face as `Neog007/TicketRouter-1.7B`. The repository contains a valid Qwen3 config and merged `model.safetensors` artifact.
+```bash
+cd cloudrun
+pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 8080
+```
 
-Directly loading a 1.7B parameter model inside free Streamlit Cloud is resource intensive and may exceed the available memory/CPU budget. For a reliable public demo, `app.py` defaults to **Stable demo mode**, which mirrors the product workflow:
+Then test:
 
-- single-ticket routing
-- batch routing
-- confidence-style human review gate
-- model card and experiment evidence
+```bash
+curl http://localhost:8080/health
 
-The sidebar also includes **Try Hugging Face model** for environments that can load the full model.
+curl -X POST http://localhost:8080/route \
+  -H "Content-Type: application/json" \
+  -d '{"ticket":"My Outlook calendar invites are not showing up in Teams meetings."}'
+```
+
+## Deploy To Cloud Run
+
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+REGION="us-east4"
+REPO="ticketrouter"
+SERVICE="ticketrouter-cpu-api"
+IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/ticketrouter-cpu-api:v1"
+
+gcloud builds submit ./cloudrun --tag "$IMAGE"
+
+gcloud run deploy $SERVICE \
+  --image "$IMAGE" \
+  --region $REGION \
+  --cpu 4 \
+  --memory 16Gi \
+  --timeout 900 \
+  --concurrency 1 \
+  --min-instances 0 \
+  --max-instances 1 \
+  --allow-unauthenticated \
+  --set-env-vars MODEL_ID=Neog007/TicketRouter-1.7B,REVIEW_THRESHOLD=0.70
+```
+
+Scale down after demo:
+
+```bash
+gcloud run services update ticketrouter-cpu-api \
+  --region us-east4 \
+  --min-instances 0 \
+  --max-instances 0
+```
+
+## LinkedIn Assets
+
+Deployment-focused carousel and post copy are ready here:
+
+- `docs/linkedin/TicketRouter_Deployment_Carousel.pdf` - 5-page PDF carousel focused on Cloud Run deployment
+- `docs/linkedin/TicketRouter_Deployment_LinkedIn_Post.txt` - LinkedIn caption/post copy
 
 ## Project Files
 
-- `TicketRouter_Builder_Edition.ipynb` - main builder notebook
 - `TicketRouter_Run2_Targeted_Accuracy.ipynb` - selected production candidate
 - `TicketRouter_Run3_Failure_Driven.ipynb` - boundary-data experiment
 - `TicketRouter_Run4_Failure_Driven_4Epochs.ipynb` - controlled epoch-count experiment
-- `app.py` - Streamlit Cloud deployment app with stable demo mode and optional Hugging Face model loading
-- `streamlit_app.py` - lightweight local ops-console demo
-- `cloudrun/` - FastAPI model-serving backend for Cloud Run GPU deployment
+- `app.py` - Streamlit ops-console app
+- `streamlit_app.py` - lightweight local ops-console variant
+- `cloudrun/` - FastAPI model-serving backend
+- `docs/assets/` - README screenshots
+- `docs/demo/` - slot for the short demo video
 
-## Final Decision
+## Final Takeaway
 
-**Selected model: Run 2**
-
-Run 2 is the production candidate because it had the strongest validation performance and the best balance across routing classes. The remaining improvement path is to collect better real-world Active Directory and Software tickets before retraining.
+TicketRouter is not just a fine-tuning notebook. It includes controlled experiments, failure analysis, a confidence-gated routing policy, and a deployed Cloud Run inference endpoint that demonstrates the model as a real engineering system.

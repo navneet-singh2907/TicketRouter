@@ -8,6 +8,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 MODEL_ID = os.getenv("MODEL_ID", "Neog007/TicketRouter-1.7B")
 HF_TOKEN = os.getenv("HF_TOKEN")

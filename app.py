@@ -3,6 +3,12 @@ import re
 
 import streamlit as st
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 
 MODEL_ID = "Neog007/TicketRouter-1.7B"
 BASE_MODEL_ID = "Qwen/Qwen3-1.7B-Base"

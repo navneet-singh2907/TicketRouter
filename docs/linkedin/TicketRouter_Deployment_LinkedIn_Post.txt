@@ -1,0 +1,25 @@
+I turned my Week 5 fine-tuning project into a deployed model-serving API.
+
+TicketRouter routes messy IT support tickets into resolver queues using a Qwen3-1.7B model fine-tuned with LoRA.
+
+The model work mattered, but the part I wanted to push further was deployment:
+
+- FastAPI inference service
+- Dockerized model-serving container
+- Artifact Registry image
+- Google Cloud Run public endpoint
+- /health endpoint for service status
+- /route endpoint for ticket classification
+- confidence gate for human review
+
+The best fine-tuned run improved validation accuracy from 24.8% to 77.8%, with macro F1 reaching 0.753.
+
+I also learned the less glamorous but more useful lesson: deployment constraints are real. I prepared the Cloud Run NVIDIA L4 GPU path, but project quota limited GPU execution, so the public demo runs CPU-only. Slower first request, but the end-to-end deployment path works.
+
+The biggest model weakness is still Active Directory. Ambiguous access tickets can look like O365 or Fileservice. That is why the service includes a human-review fallback instead of pretending every prediction is production-safe.
+
+This became more than a notebook: model selection, failure analysis, Docker, Cloud Run, and a live API.
+
+Curious how others are handling deployment constraints when taking fine-tuned models from notebook to demo.
+
+#MachineLearning #MLOps #CloudRun #FastAPI #Docker #LLM #FineTuning #AIEngineering #HuggingFace

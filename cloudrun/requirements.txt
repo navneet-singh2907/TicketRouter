@@ -5,3 +5,4 @@ torch
 accelerate
 huggingface_hub
 safetensors
+python-dotenv
